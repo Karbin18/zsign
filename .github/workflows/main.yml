@@ -20,8 +20,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev cmake g++ git
+          # ئەگەر فۆڵدەرەکە هەبوو پێشتر، دەیسڕینەوە بۆ ئەوەی لە سفرەوە دەست پێ بکات
+          if [ -d "zsign" ]; then rm -rf zsign; fi
           git clone https://github.com/zhlynn/zsign.git
-          cd zsign && mkdir build && cd build && cmake .. && make && sudo cp zsign /usr/local/bin/
+          cd zsign
+          mkdir -p build 
+          cd build
+          cmake ..
+          make
+          sudo cp zsign /usr/local/bin/
 
       - name: 2. Check Files existence
         run: |
