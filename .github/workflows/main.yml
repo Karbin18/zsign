@@ -3,20 +3,18 @@ on:
   workflow_dispatch:
     inputs:
       app_name:
-        description: 'ناوی بەرنامە (بۆ نموونە: snapchat)'
+        description: 'ناوی بەرنامە'
         required: true
       ipa_url:
-        description: 'لینکی فایلی IPA'
+        description: 'لینکی IPA'
         required: true
 
 jobs:
   sign:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # بۆ چارەسەری ئاگادارکردنەوەکە
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4 # وەشانی نوێ کە کێشەی Node.js نییە
+        uses: actions/checkout@v4
 
       - name: Setup zSign
         run: |
@@ -25,31 +23,38 @@ jobs:
           git clone https://github.com/zhlynn/zsign.git
           cd zsign && mkdir build && cd build && cmake .. && make && sudo cp zsign /usr/local/bin/
 
-      - name: Check Files
+      - name: Verify Secret & Files
         run: |
-          echo "پشکنینی هەبوونی فایلەکان..."
-          ls -l cert.p12 || (echo "کێشە: فایلی cert.p12 نەدۆزرایەوە" && exit 1)
-          ls -l prov.mobileprovision || (echo "کێشە: فایلی prov.mobileprovision نەدۆزرایەوە" && exit 1)
-          ls -l source.json || (echo "کێشە: فایلی source.json نەدۆزرایەوە" && exit 1)
+          if [ -z "${{ secrets.P12_PASSWORD }}" ]; then
+            echo "❌ کێشە: پاسۆرد لە ناو Secrets نەدۆزرایەوە! دڵنیابەرەوە ناوی سیکرێتەکە P12_PASSWORD بێت."
+            exit 1
+          fi
+          ls -l cert.p12 || (echo "❌ فایلی cert.p12 نەدۆزرایەوە" && exit 1)
 
       - name: Download IPA
         run: curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
 
       - name: Signing IPA
         run: |
-          # پشکنین ئەگەر پاسۆردەکە گەیشتووەتە مەکینەکە
-          if [ -z "${{ secrets.P12_PASSWORD }}" ]; then
-            echo "Error: پاسۆردی P12_PASSWORD لە ناو Secrets پێناسە نەکراوە!"
+          # هەوڵدان بۆ ساین کردن بە بەکارهێنانی سیکرێت
+          zsign -k cert.p12 -p "${{ secrets.P12_PASSWORD }}" -m prov.mobileprovision -o signed.ipa app.ipa || {
+            echo "❌ هەڵەی 100: پاسۆردی شەهادەکە هەڵەیە یان فایلەکە کێشەی هەیە."
             exit 1
-          fi
-          # هەوڵدان بۆ ساین کردن
-          zsign -k cert.p12 -p "${{ secrets.P12_PASSWORD }}" -m prov.mobileprovision -o signed.ipa app.ipa
+          }
 
-      - name: Update JSON and Push
+      - name: Update JSON
         run: |
           IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
-          python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
+          python3 -c "import json, os; 
+          f=open('source.json','r+'); 
+          d=json.load(f); 
+          d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; 
+          f.seek(0); 
+          json.dump(d,f,indent=2); 
+          f.truncate()"
           
+      - name: Push Changes
+        run: |
           git config --global user.name "SignerBot"
           git config --global user.email "bot@github.com"
           git add .
