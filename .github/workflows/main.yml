@@ -1,0 +1,36 @@
+name: AutoSigner
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'ناوی بەرنامە وەک ناو JSON'
+        required: true
+      ipa_url:
+        description: 'لینکی IPA'
+        required: true
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup zSign
+        run: |
+          git clone https://github.com/zhlynn/zsign.git
+          cd zsign && mkdir build && cd build && cmake .. && make && sudo cp zsign /usr/local/bin/
+      
+      - name: Sign and Update
+        run: |
+          curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
+          # بەکارهێنانی پاسۆردەکە لە سیکرێتەوە
+          zsign -k cert.p12 -p ${{ secrets.P12_PASSWORD }} -m prov.mobileprovision -o signed.ipa app.ipa
+          
+          # نوێکردنەوەی JSON (ئەم بەشە لینکی بەرنامەکە دەگۆڕێت)
+          IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
+          python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
+          
+          git config --global user.name "Bot"
+          git config --global user.email "bot@github.com"
+          git add .
+          git commit -m "Update ${{ github.event.inputs.app_name }}"
+          git push
