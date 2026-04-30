@@ -37,6 +37,12 @@ jobs:
 
       - name: Signing IPA
         run: |
+          # پشکنین ئەگەر پاسۆردەکە گەیشتووەتە مەکینەکە
+          if [ -z "${{ secrets.P12_PASSWORD }}" ]; then
+            echo "Error: پاسۆردی P12_PASSWORD لە ناو Secrets پێناسە نەکراوە!"
+            exit 1
+          fi
+          # هەوڵدان بۆ ساین کردن
           zsign -k cert.p12 -p "${{ secrets.P12_PASSWORD }}" -m prov.mobileprovision -o signed.ipa app.ipa
 
       - name: Update JSON and Push
