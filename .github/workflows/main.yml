@@ -1,4 +1,4 @@
-name: AutoSigner
+name: AutoSigner-Perfect-Version
 on:
   workflow_dispatch:
     inputs:
@@ -6,55 +6,69 @@ on:
         description: 'ناوی بەرنامە'
         required: true
       ipa_url:
-        description: 'لینکی IPA'
+        description: 'لینکی ڕاستەوخۆی IPA'
         required: true
 
 jobs:
   sign:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # بۆ ئەوەی ڕێگەت پێ بدات فایلە نوێیەکە پۆست بکەیت
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 1. Clean and Setup zSign
+      - name: 1. Setup and Build zSign
         run: |
-          # پاککردنەوەی هەرچی فۆڵدەری کۆن هەیە بۆ ڕێگری لە 'File exists'
+          # پاککردنەوەی پاشماوە کۆنەکان بۆ ڕێگری لە Error
           sudo rm -rf zsign build
           
+          # دامەزراندنی پێداویستییەکان
           sudo apt-get update
           sudo apt-get install -y libssl-dev cmake g++ git
           
-          # دابەزاندنی وەشانێکی نوێ
+          # دابەزاندنی سۆرس و بونیادنانی
           git clone --depth 1 https://github.com/zhlynn/zsign.git
-          
-          # پرۆسەی بونیادنان (Build) بە شێوەیەکی پارێزراو
           cd zsign
-          mkdir -p build
+          mkdir build
           cd build
           cmake ..
           make -j$(nproc)
           sudo cp zsign /usr/local/bin/
+          
+          # گەڕانەوە بۆ شوێنی سەرەکی
+          cd ../..
 
-      - name: 2. Check Essential Files
+      - name: 2. Verify Essential Files
         run: |
-          ls -l cert.p12 || (echo "❌ فایلی cert.p12 لە لاپەڕەی سەرەکی نییە" && exit 1)
-          ls -l prov.mobileprovision || (echo "❌ فایلی prov.mobileprovision لە لاپەڕەی سەرەکی نییە" && exit 1)
+          echo "Checking for certificate and provision files..."
+          ls -l cert.p12 || (echo "❌ فایلی cert.p12 لە شوێنی سەرەکی نییە" && exit 1)
+          ls -l prov.mobileprovision || (echo "❌ فایلی prov.mobileprovision لە شوێنی سەرەکی نییە" && exit 1)
+          ls -l source.json || (echo "❌ فایلی source.json لە شوێنی سەرەکی نییە" && exit 1)
 
-      - name: 3. Download and Sign
+      - name: 3. Download IPA File
         run: |
           curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
-          # ⚠️ تکایە لێرە لە جیاتی 1234 پاسۆردە ڕاستەقینەکەت بنووسە
+          if [ ! -s app.ipa ]; then echo "❌ دابەزاندنی IPA شکستی هێنا یان فایلەکە بەتاڵە"; exit 1; fi
+
+      - name: 4. Sign the IPA
+        run: |
+          # ⚠️ تکایە لە جیاتی 1234 پاسۆردی ڕاستەقینەی شەهادەکەت بنووسە
+          # ئەگەر پاسۆردەکەت لەناو Secrets داناوە، بیکە بە: ${{ secrets.P12_PASSWORD }}
           zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa
 
-      - name: 4. Update and Push
+      - name: 5. Update JSON and Push Changes
         run: |
+          # ڕێکخستنی ناسنامەی بۆتەکە
           git config --global user.name "SignerBot"
           git config --global user.email "bot@github.com"
           
-          # نوێکردنەوەی فایلی JSON
+          # نوێکردنەوەی لینکی ناو سۆرسەکە
           IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
           python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
           
+          # پۆستکردنی گۆڕانکارییەکان بۆ ناو گیتھاب
           git add .
-          git commit -m "Update ${{ github.event.inputs.app_name }}"
+          git commit -m "Successfully signed ${{ github.event.inputs.app_name }}"
           git push
