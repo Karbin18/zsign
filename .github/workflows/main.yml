@@ -1,4 +1,4 @@
-name: DebugSigner
+name: AutoSigner-Windows-Fixed
 on:
   workflow_dispatch:
     inputs:
@@ -10,7 +10,7 @@ on:
         required: true
 
 jobs:
-  debug-sign:
+  sign:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -19,25 +19,23 @@ jobs:
       - name: Setup zSign
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcommoncrypto-dev cmake
+          sudo apt-get install -y libssl-dev cmake g++ git
           git clone https://github.com/zhlynn/zsign.git
           cd zsign && mkdir build && cd build && cmake .. && make && sudo cp zsign /usr/local/bin/
 
-      - name: Check P12 File
-        run: |
-          ls -l cert.p12
-          file cert.p12
-          # ئەمە نیشانی دەدات ئایا فایلەکە بەڕاستی P12 یە یان تەنها تێکستە
-
-      - name: Test Password (Manual)
-        run: |
-          # تکایە لە جیاتی 1234، پاسۆردی ڕاستەقینەی شەهادەکەت بنووسە
-          echo "تاقیکردنەوەی پاسۆرد بە دەست..."
-          zsign -k cert.p12 -p 1234 -m prov.mobileprovision -v
-          # ئەگەر لێرەدا Error 100 بدات، واتە فایلەکە یان پاسۆردەکە ۱۰۰٪ هەڵەیە
-
-      - name: Download and Sign (Final Try)
+      - name: Sign IPA
         run: |
           curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
-          # لێرە پاسۆردە دەستییەکە بنووسە لە جیاتی 1234
-          zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa
+          # لێرە لە جیاتی 1234 پاسۆردی ڕاستەقینەی شەهادەکەت بنووسە
+          zsign -k cert.p12 -p 1234 -m prov.mobileprovision -o signed.ipa app.ipa
+
+      - name: Update Source & Push
+        run: |
+          IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
+          python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
+          
+          git config --global user.name "SignerBot"
+          git config --global user.email "bot@github.com"
+          git add .
+          git commit -m "Update ${{ github.event.inputs.app_name }}"
+          git push
