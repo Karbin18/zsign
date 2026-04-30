@@ -1,4 +1,4 @@
-name: AutoSigner-Windows-Fixed
+name: AutoSigner-Windows-Debug
 on:
   workflow_dispatch:
     inputs:
@@ -16,20 +16,31 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup zSign
+      - name: 1. Setup zSign
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev cmake g++ git
           git clone https://github.com/zhlynn/zsign.git
           cd zsign && mkdir build && cd build && cmake .. && make && sudo cp zsign /usr/local/bin/
 
-      - name: Sign IPA
+      - name: 2. Check Files existence
+        run: |
+          echo "پشکنینی هەبوونی فایلەکان لە لاپەڕەی سەرەکی..."
+          ls -l cert.p12 || (echo "❌ فایلی cert.p12 نادۆزرایەوە" && exit 1)
+          ls -l prov.mobileprovision || (echo "❌ فایلی prov.mobileprovision نادۆزرایەوە" && exit 1)
+          ls -l source.json || (echo "❌ فایلی source.json نادۆزرایەوە" && exit 1)
+
+      - name: 3. Download IPA
         run: |
           curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
-          # لێرە لە جیاتی 1234 پاسۆردی ڕاستەقینەی شەهادەکەت بنووسە
-          zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa
+          if [ ! -f app.ipa ]; then echo "❌ دابەزاندنی IPA شکستی هێنا"; exit 1; fi
 
-      - name: Update Source & Push
+      - name: 4. Final Sign Process
+        run: |
+          # تکایە لێرە لە جیاتی 1234 پاسۆردە ڕاستەقینەکەت بنووسە
+          zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa || (echo "❌ هەڵە لە کاتی ساین کردن (Error 100 یان هاوشێوەکانی)"; exit 1)
+
+      - name: 5. Update Source & Push
         run: |
           IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
           python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
