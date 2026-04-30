@@ -9,83 +9,62 @@ on:
         required: true
 
 jobs:
-  sign:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup zSign
-        run: |
-          sudo rm -rf zsign build
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev cmake g++ git
-          git clone --depth 1 https://github.com/zhlynn/zsign.git
-          cd zsign
-          mkdir -p build && cd build
-          cmake ..
-          make -j$(nproc)
-          sudo cp zsign /usr/local/bin/
+      - name: Create folders
+        run: mkdir -p output
 
       - name: Download IPA
         run: |
-          curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
+          curl -L "${{ github.event.inputs.ipa_url }}" -o "${{ github.event.inputs.app_name }}.ipa"
 
-      - name: Sign IPA
+      - name: Move IPA
         run: |
-          # لێرە پاسۆردی شەهادەکەت بنووسە ئەگەر جیاوازە لەمە
-          zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa
+          mv "${{ github.event.inputs.app_name }}.ipa" output/
 
-      - name: Save Output and Create Plist
+      - name: Generate plist (AUTO)
         run: |
-          mkdir -p output
-          APP_NAME="${{ github.event.inputs.app_name }}"
-          REPO="${{ github.repository }}"
-          IPA_URL="https://raw.githubusercontent.com/$REPO/main/output/$APP_NAME.ipa"
-          
-          mv signed.ipa output/$APP_NAME.ipa
-          
-          cat <<EOF > output/$APP_NAME.plist
+          APP="${{ github.event.inputs.app_name }}"
+          REPO="Karbin18/zsign"
+
+          cat <<EOF > output/$APP.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-              <key>items</key>
-              <array>
+            <key>items</key>
+            <array>
+              <dict>
+                <key>assets</key>
+                <array>
                   <dict>
-                      <key>assets</key>
-                      <array>
-                          <dict>
-                              <key>kind</key>
-                              <string>software-package</string>
-                              <key>url</key>
-                              <string>$IPA_URL</string>
-                          </dict>
-                      </array>
-                      <key>metadata</key>
-                      <dict>
-                          <key>bundle-identifier</key>
-                          <string>com.autosigner.app</string>
-                          <key>bundle-version</key>
-                          <string>1.0</string>
-                          <key>kind</key>
-                          <string>software</string>
-                          <key>title</key>
-                          <string>$APP_NAME</string>
-                      </dict>
+                    <key>url</key>
+                    <string>https://raw.githubusercontent.com/$REPO/main/output/$APP.ipa</string>
+                    <key>kind</key>
+                    <string>software-package</string>
                   </dict>
-              </array>
+                </array>
+                <key>metadata</key>
+                <dict>
+                  <key>bundle-identifier</key>
+                  <string>com.karbin.$APP</string>
+                  <key>bundle-version</key>
+                  <string>1.0</string>
+                  <key>kind</key>
+                  <string>software</string>
+                  <key>title</key>
+                  <string>$APP</string>
+                </dict>
+              </dict>
+            </array>
           </dict>
           </plist>
           EOF
 
-      - name: Push Changes
-        run: |
-          git config --global user.name "bot"
-          git config --global user.email "bot@github.com"
-          git add .
-          git commit -m "Successfully signed ${{ github.event.inputs.app_name }}"
-          git push
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: output/
