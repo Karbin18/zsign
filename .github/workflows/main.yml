@@ -1,4 +1,4 @@
-name: AutoSigner
+name: DebugSigner
 on:
   workflow_dispatch:
     inputs:
@@ -10,7 +10,7 @@ on:
         required: true
 
 jobs:
-  sign:
+  debug-sign:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -23,40 +23,21 @@ jobs:
           git clone https://github.com/zhlynn/zsign.git
           cd zsign && mkdir build && cd build && cmake .. && make && sudo cp zsign /usr/local/bin/
 
-      - name: Verify Secret & Files
+      - name: Check P12 File
         run: |
-          if [ -z "${{ secrets.P12_PASSWORD }}" ]; then
-            echo "❌ کێشە: پاسۆرد لە ناو Secrets نەدۆزرایەوە! دڵنیابەرەوە ناوی سیکرێتەکە P12_PASSWORD بێت."
-            exit 1
-          fi
-          ls -l cert.p12 || (echo "❌ فایلی cert.p12 نەدۆزرایەوە" && exit 1)
+          ls -l cert.p12
+          file cert.p12
+          # ئەمە نیشانی دەدات ئایا فایلەکە بەڕاستی P12 یە یان تەنها تێکستە
 
-      - name: Download IPA
-        run: curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
+      - name: Test Password (Manual)
+        run: |
+          # تکایە لە جیاتی 1234، پاسۆردی ڕاستەقینەی شەهادەکەت بنووسە
+          echo "تاقیکردنەوەی پاسۆرد بە دەست..."
+          zsign -k cert.p12 -p 1234 -m prov.mobileprovision -v
+          # ئەگەر لێرەدا Error 100 بدات، واتە فایلەکە یان پاسۆردەکە ۱۰۰٪ هەڵەیە
 
-      - name: Signing IPA
+      - name: Download and Sign (Final Try)
         run: |
-          # هەوڵدان بۆ ساین کردن بە بەکارهێنانی سیکرێت
-          zsign -k cert.p12 -p "${{ secrets.P12_PASSWORD }}" -m prov.mobileprovision -o signed.ipa app.ipa || {
-            echo "❌ هەڵەی 100: پاسۆردی شەهادەکە هەڵەیە یان فایلەکە کێشەی هەیە."
-            exit 1
-          }
-
-      - name: Update JSON
-        run: |
-          IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
-          python3 -c "import json, os; 
-          f=open('source.json','r+'); 
-          d=json.load(f); 
-          d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; 
-          f.seek(0); 
-          json.dump(d,f,indent=2); 
-          f.truncate()"
-          
-      - name: Push Changes
-        run: |
-          git config --global user.name "SignerBot"
-          git config --global user.email "bot@github.com"
-          git add .
-          git commit -m "Updated ${{ github.event.inputs.app_name }}"
-          git push
+          curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
+          # لێرە پاسۆردە دەستییەکە بنووسە لە جیاتی 1234
+          zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa
