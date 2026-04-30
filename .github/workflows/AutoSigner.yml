@@ -13,57 +13,66 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Create folders
+      - name: Setup
         run: mkdir -p output
 
       - name: Download IPA
         run: |
-          curl -L "${{ github.event.inputs.ipa_url }}" -o "${{ github.event.inputs.app_name }}.ipa"
+          curl -L "${{ github.event.inputs.ipa_url }}" -o temp.ipa
+
+      - name: Normalize name
+        run: |
+          echo "APP_NAME=${{ github.event.inputs.app_name }}" >> $GITHUB_ENV
 
       - name: Move IPA
         run: |
-          mv "${{ github.event.inputs.app_name }}.ipa" output/
+          mv temp.ipa output/$APP_NAME.ipa
 
-      - name: Generate plist (AUTO)
+      - name: Generate PLIST (FIXED)
         run: |
-          APP="${{ github.event.inputs.app_name }}"
           REPO="Karbin18/zsign"
 
-          cat <<EOF > output/$APP.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>items</key>
-            <array>
+          cat <<EOF > output/$APP_NAME.plist
+              <?xml version="1.0" encoding="UTF-8"?>
+              <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+              <plist version="1.0">
               <dict>
-                <key>assets</key>
+                <key>items</key>
                 <array>
                   <dict>
-                    <key>url</key>
-                    <string>https://raw.githubusercontent.com/$REPO/main/output/$APP.ipa</string>
-                    <key>kind</key>
-                    <string>software-package</string>
+                    <key>assets</key>
+                    <array>
+                      <dict>
+                        <key>kind</key>
+                        <string>software-package</string>
+                        <key>url</key>
+                        <string>https://raw.githubusercontent.com/$REPO/main/output/$APP_NAME.ipa</string>
+                      </dict>
+                    </array>
+                    <key>metadata</key>
+                    <dict>
+                      <key>bundle-identifier</key>
+                      <string>com.karbin.$APP_NAME</string>
+                      <key>bundle-version</key>
+                      <string>1.0</string>
+                      <key>kind</key>
+                      <string>software</string>
+                      <key>title</key>
+                      <string>$APP_NAME</string>
+                    </dict>
                   </dict>
                 </array>
-                <key>metadata</key>
-                <dict>
-                  <key>bundle-identifier</key>
-                  <string>com.karbin.$APP</string>
-                  <key>bundle-version</key>
-                  <string>1.0</string>
-                  <key>kind</key>
-                  <string>software</string>
-                  <key>title</key>
-                  <string>$APP</string>
-                </dict>
               </dict>
-            </array>
-          </dict>
-          </plist>
-          EOF
+              </plist>
+              EOF
 
-      - name: Upload artifact
+      - name: Verify files (IMPORTANT FIX FOR 404)
+        run: |
+          ls -lah output/
+          test -f output/$APP_NAME.ipa || exit 1
+          test -f output/$APP_NAME.plist || exit 1
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build
