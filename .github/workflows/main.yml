@@ -1,4 +1,4 @@
-name: AutoSigner-Windows-Debug
+name: AutoSigner
 on:
   workflow_dispatch:
     inputs:
@@ -16,44 +16,45 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 1. Setup zSign
+      - name: 1. Clean and Setup zSign
         run: |
+          # پاککردنەوەی هەرچی فۆڵدەری کۆن هەیە بۆ ڕێگری لە 'File exists'
+          sudo rm -rf zsign build
+          
           sudo apt-get update
           sudo apt-get install -y libssl-dev cmake g++ git
-          # ئەگەر فۆڵدەرەکە هەبوو پێشتر، دەیسڕینەوە بۆ ئەوەی لە سفرەوە دەست پێ بکات
-          if [ -d "zsign" ]; then rm -rf zsign; fi
-          git clone https://github.com/zhlynn/zsign.git
+          
+          # دابەزاندنی وەشانێکی نوێ
+          git clone --depth 1 https://github.com/zhlynn/zsign.git
+          
+          # پرۆسەی بونیادنان (Build) بە شێوەیەکی پارێزراو
           cd zsign
-          mkdir -p build 
+          mkdir -p build
           cd build
           cmake ..
-          make
+          make -j$(nproc)
           sudo cp zsign /usr/local/bin/
 
-      - name: 2. Check Files existence
+      - name: 2. Check Essential Files
         run: |
-          echo "پشکنینی هەبوونی فایلەکان لە لاپەڕەی سەرەکی..."
-          ls -l cert.p12 || (echo "❌ فایلی cert.p12 نادۆزرایەوە" && exit 1)
-          ls -l prov.mobileprovision || (echo "❌ فایلی prov.mobileprovision نادۆزرایەوە" && exit 1)
-          ls -l source.json || (echo "❌ فایلی source.json نادۆزرایەوە" && exit 1)
+          ls -l cert.p12 || (echo "❌ فایلی cert.p12 لە لاپەڕەی سەرەکی نییە" && exit 1)
+          ls -l prov.mobileprovision || (echo "❌ فایلی prov.mobileprovision لە لاپەڕەی سەرەکی نییە" && exit 1)
 
-      - name: 3. Download IPA
+      - name: 3. Download and Sign
         run: |
           curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
-          if [ ! -f app.ipa ]; then echo "❌ دابەزاندنی IPA شکستی هێنا"; exit 1; fi
+          # ⚠️ تکایە لێرە لە جیاتی 1234 پاسۆردە ڕاستەقینەکەت بنووسە
+          zsign -k cert.p12 -p 1234 -m prov.mobileprovision -o signed.ipa app.ipa
 
-      - name: 4. Final Sign Process
+      - name: 4. Update and Push
         run: |
-          # تکایە لێرە لە جیاتی 1234 پاسۆردە ڕاستەقینەکەت بنووسە
-          zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa || (echo "❌ هەڵە لە کاتی ساین کردن (Error 100 یان هاوشێوەکانی)"; exit 1)
-
-      - name: 5. Update Source & Push
-        run: |
+          git config --global user.name "SignerBot"
+          git config --global user.email "bot@github.com"
+          
+          # نوێکردنەوەی فایلی JSON
           IPA_LINK="https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa"
           python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='$IPA_LINK'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
           
-          git config --global user.name "SignerBot"
-          git config --global user.email "bot@github.com"
           git add .
           git commit -m "Update ${{ github.event.inputs.app_name }}"
           git push
