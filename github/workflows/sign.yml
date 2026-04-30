@@ -1,0 +1,50 @@
+name: Sign and Update Source
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'ناوی بەرنامەکە (بۆ نموونە: esign)'
+        required: true
+      ipa_url:
+        description: 'لینکی فایلی IPA ئەسڵییەکە'
+        required: true
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Install zSign
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcommoncrypto-dev
+          git clone https://github.com/zhlynn/zsign.git
+          cd zsign
+          mkdir build
+          cd build
+          cmake ..
+          make
+          sudo cp zsign /usr/local/bin/
+
+      - name: Sign IPA
+        run: |
+          # لێرەدا فایلی شەهادە و IPA دادەبەزێنین و ساینی دەکەین
+          curl -L "${{ github.event.inputs.ipa_url }}" -o original.ipa
+          # تێبینی: دەبێت فایلەکانی p12 و provision پێشتر لە ناو گیتھابەکەت دابنێیت
+          zsign -k cert.p12 -p 123456 -m prov.mobileprovision -o signed.ipa original.ipa
+
+      - name: Create Plist and Update JSON
+        run: |
+          # دروستکردنی فایلی Plist بۆ دابەزاندن
+          # لێرەدا سکریپتێک دەنووسین کە لینکی نوێ دەخاتە ناو source.json
+          python3 -c "import json; f=open('source.json','r+'); d=json.load(f); d['${{ github.event.inputs.app_name }}']='https://raw.githubusercontent.com/${{ github.repository }}/main/signed.ipa'; f.seek(0); json.dump(d,f,indent=2); f.truncate()"
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add .
+          git commit -m "Update ${{ github.event.inputs.app_name }}"
+          git push
