@@ -1,63 +1,59 @@
 name: AutoSigner
 
 on:
-  workflow_dispatch:
-    inputs:
-      app_name:
-        required: true
-      ipa_url:
-        required: true
+workflow_dispatch:
+inputs:
+app_name:
+required: true
+ipa_url:
+required: true
 
 jobs:
-  sign:
-    runs-on: ubuntu-latest
+sign:
+runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+steps:
+  - uses: actions/checkout@v4
 
-      - name: Setup zSign
-        run: |
-          sudo rm -rf zsign
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev cmake g++ git
+  - name: Setup zSign
+    run: |
+      sudo rm -rf zsign
+      sudo apt-get update
+      sudo apt-get install -y libssl-dev cmake g++ git
 
-          git clone --depth 1 https://github.com/zhlynn/zsign.git
-          cd zsign
-          mkdir build && cd build
-          cmake ..
-          make -j$(nproc)
-          sudo cp zsign /usr/local/bin/
-          cd ../..
+      git clone --depth 1 https://github.com/zhlynn/zsign.git
+      cd zsign
+      mkdir build && cd build
+      cmake ..
+      make -j$(nproc)
+      sudo cp zsign /usr/local/bin/
+      cd ../..
 
-      - name: Download IPA
-        run: |
-          curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
+  - name: Download IPA
+    run: |
+      curl -L "${{ github.event.inputs.ipa_url }}" -o app.ipa
 
-      - name: Sign IPA
-        run: |
-          zsign -k cert.p12 -p 1234 -m prov.mobileprovision -o signed.ipa app.ipa
+  - name: Sign IPA
+    run: |
+      zsign -k cert.p12 -p AppleP12.com -m prov.mobileprovision -o signed.ipa app.ipa
 
-      - name: Upload IPA
-        run: |
-          mkdir -p public/apps
-          mv signed.ipa public/apps/${{ github.event.inputs.app_name }}.ipa
+  - name: Save Output
+    run: |
+      mkdir -p output
+      mv signed.ipa output/${{ github.event.inputs.app_name }}.ipa
 
-      - name: Update JSON
-        run: |
-          python3 - <<EOF
-          import json
-          f = open('public/apps.json','r+')
-          data = json.load(f)
-          data["${{ github.event.inputs.app_name }}"] = "apps/${{ github.event.inputs.app_name }}.ipa"
-          f.seek(0)
-          json.dump(data,f,indent=2)
-          f.truncate()
-          EOF
+  - name: Create plist
+    run: |
+      APP="${{ github.event.inputs.app_name }}"
+      REPO="${{ github.repository }}"
 
-      - name: Push
-        run: |
-          git config --global user.name "bot"
-          git config --global user.email "bot@github.com"
-          git add .
-          git commit -m "Add app"
-          git push
+      IPA_URL="https://raw.githubusercontent.com/$REPO/main/output/$APP.ipa"
+
+      cat > output/$APP.plist <<EOF
+  - name: Push
+    run: |
+      git config --global user.name "bot"
+      git config --global user.email "bot@github.com"
+      git add .
+      git commit -m "Add ${{ github.event.inputs.app_name }}"
+      git push
